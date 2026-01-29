@@ -11,7 +11,7 @@
 #  4. 配置SSH服务实现密钥远程登录                                              #
 #  5. 密钥生成成功后交互询问是否显示私钥                                        #
 #                                                                              #
-#  版本: v2.1 (新增私钥显示交互)                                                #
+#  版本: v2.2 (修复私钥显示问题)                                                #
 #  日期: 2025-04-07                                                            #
 #                                                                              #
 ################################################################################
@@ -34,6 +34,8 @@ DISTRO=""
 ALGO=""
 KEY_BITS=""
 SHOW_PRIVATE_KEY=false
+PRIVATE_KEY_FILE=""
+PUBLIC_KEY_FILE=""
 
 ################################################################################
 #                          输出函数                                             #
@@ -210,18 +212,24 @@ EOF
             1)
                 ALGO="rsa"
                 KEY_BITS="4096"
+                PRIVATE_KEY_FILE="$SSH_DIR/id_rsa"
+                PUBLIC_KEY_FILE="$SSH_DIR/id_rsa.pub"
                 log_success "已选择: RSA 4096位"
                 break
                 ;;
             2)
                 ALGO="rsa"
                 KEY_BITS="8192"
+                PRIVATE_KEY_FILE="$SSH_DIR/id_rsa"
+                PUBLIC_KEY_FILE="$SSH_DIR/id_rsa.pub"
                 log_success "已选择: RSA 8192位"
                 break
                 ;;
             3)
                 ALGO="ed25519"
                 KEY_BITS="256"
+                PRIVATE_KEY_FILE="$SSH_DIR/id_ed25519"
+                PUBLIC_KEY_FILE="$SSH_DIR/id_ed25519.pub"
                 log_success "已选择: Ed25519 (推荐)"
                 break
                 ;;
@@ -262,11 +270,11 @@ backup_existing_keys() {
         mkdir -p "$backup_subdir"
         
         # 备份现有密钥和配置
-        [[ -f "$SSH_DIR/id_rsa" ]] && cp "$SSH_DIR/id_rsa" "$backup_subdir/"
-        [[ -f "$SSH_DIR/id_rsa.pub" ]] && cp "$SSH_DIR/id_rsa.pub" "$backup_subdir/"
-        [[ -f "$SSH_DIR/id_ed25519" ]] && cp "$SSH_DIR/id_ed25519" "$backup_subdir/"
-        [[ -f "$SSH_DIR/id_ed25519.pub" ]] && cp "$SSH_DIR/id_ed25519.pub" "$backup_subdir/"
-        [[ -f "$SSH_DIR/authorized_keys" ]] && cp "$SSH_DIR/authorized_keys" "$backup_subdir/"
+        [[ -f "$SSH_DIR/id_rsa" ]] && cp "$SSH_DIR/id_rsa" "$backup_subdir/" 2>/dev/null
+        [[ -f "$SSH_DIR/id_rsa.pub" ]] && cp "$SSH_DIR/id_rsa.pub" "$backup_subdir/" 2>/dev/null
+        [[ -f "$SSH_DIR/id_ed25519" ]] && cp "$SSH_DIR/id_ed25519" "$backup_subdir/" 2>/dev/null
+        [[ -f "$SSH_DIR/id_ed25519.pub" ]] && cp "$SSH_DIR/id_ed25519.pub" "$backup_subdir/" 2>/dev/null
+        [[ -f "$SSH_DIR/authorized_keys" ]] && cp "$SSH_DIR/authorized_keys" "$backup_subdir/" 2>/dev/null
         
         log_success "旧密钥已备份到: $backup_subdir"
     fi
@@ -280,16 +288,19 @@ generate_keypair() {
     
     log_info "生成 ${ALGO^^} 密钥对..."
     
+    # 删除旧密钥（如果存在）
+    rm -f "$PRIVATE_KEY_FILE" "$PUBLIC_KEY_FILE" 2>/dev/null || true
+    
     # 根据算法生成密钥
     if [[ "$ALGO" == "rsa" ]]; then
-        ssh-keygen -t rsa -b "$KEY_BITS" -N "" -f "$SSH_DIR/id_rsa" -C "root@$(hostname)" 2>/dev/null
-        chmod 600 "$SSH_DIR/id_rsa"
-        chmod 644 "$SSH_DIR/id_rsa.pub"
+        ssh-keygen -t rsa -b "$KEY_BITS" -N "" -f "$PRIVATE_KEY_FILE" -C "root@$(hostname)" 2>&1
+        chmod 600 "$PRIVATE_KEY_FILE"
+        chmod 644 "$PUBLIC_KEY_FILE"
         log_success "RSA ${KEY_BITS}位 密钥对已生成"
     elif [[ "$ALGO" == "ed25519" ]]; then
-        ssh-keygen -t ed25519 -N "" -f "$SSH_DIR/id_ed25519" -C "root@$(hostname)" 2>/dev/null
-        chmod 600 "$SSH_DIR/id_ed25519"
-        chmod 644 "$SSH_DIR/id_ed25519.pub"
+        ssh-keygen -t ed25519 -N "" -f "$PRIVATE_KEY_FILE" -C "root@$(hostname)" 2>&1
+        chmod 600 "$PRIVATE_KEY_FILE"
+        chmod 644 "$PUBLIC_KEY_FILE"
         log_success "Ed25519 密钥对已生成"
     fi
 }
@@ -301,26 +312,16 @@ generate_keypair() {
 ask_display_private_key() {
     print_step "密钥生成成功！是否显示私钥"
     
-    cat << 'EOF'
+    cat << EOF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   密钥对已成功生成！
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 密钥存储位置:
 
-EOF
-    
-    # 显示密钥位置
-    if [[ "$ALGO" == "rsa" ]]; then
-        echo "  私钥: $SSH_DIR/id_rsa"
-        echo "  公钥: $SSH_DIR/id_rsa.pub"
-    elif [[ "$ALGO" == "ed25519" ]]; then
-        echo "  私钥: $SSH_DIR/id_ed25519"
-        echo "  公钥: $SSH_DIR/id_ed25519.pub"
-    fi
-    
-    echo ""
-    cat << 'EOF'
+  私钥: $PRIVATE_KEY_FILE
+  公钥: $PUBLIC_KEY_FILE
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
@@ -388,29 +389,24 @@ configure_ssh_service() {
     # 配置authorized_keys
     log_info "配置授权密钥..."
     
-    if [[ "$ALGO" == "rsa" ]]; then
-        local pub_key_file="$SSH_DIR/id_rsa.pub"
-    elif [[ "$ALGO" == "ed25519" ]]; then
-        local pub_key_file="$SSH_DIR/id_ed25519.pub"
-    fi
-    
     # 创建authorized_keys
     if [[ ! -f "$SSH_DIR/authorized_keys" ]]; then
         touch "$SSH_DIR/authorized_keys"
     fi
     
     # 添加公钥
-    local public_key=$(cat "$pub_key_file")
-    
-    if ! grep -F "$public_key" "$SSH_DIR/authorized_keys" >/dev/null 2>&1; then
-        echo "$public_key" >> "$SSH_DIR/authorized_keys"
-        log_success "公钥已添加到 authorized_keys"
+    if [[ -f "$PUBLIC_KEY_FILE" ]]; then
+        local public_key=$(cat "$PUBLIC_KEY_FILE")
+        
+        if ! grep -F "$public_key" "$SSH_DIR/authorized_keys" >/dev/null 2>&1; then
+            echo "$public_key" >> "$SSH_DIR/authorized_keys"
+            log_success "公钥已添加到 authorized_keys"
+        fi
     fi
     
     # 设置权限
     chmod 700 "$SSH_DIR"
     chmod 600 "$SSH_DIR/authorized_keys"
-    chmod 644 "$SSH_DIR/id_*.pub"
     
     # 重启SSH服务
     log_info "重启SSH服务..."
@@ -436,17 +432,10 @@ display_private_key() {
     
     print_step "显示私钥内容"
     
-    # 确定私钥文件路径
-    local private_key_file
-    if [[ "$ALGO" == "rsa" ]]; then
-        private_key_file="$SSH_DIR/id_rsa"
-    elif [[ "$ALGO" == "ed25519" ]]; then
-        private_key_file="$SSH_DIR/id_ed25519"
-    fi
-    
-    if [[ ! -f "$private_key_file" ]]; then
-        log_error "私钥文件不存在: $private_key_file"
-        exit 1
+    # 验证私钥文件存在
+    if [[ ! -f "$PRIVATE_KEY_FILE" ]]; then
+        log_error "私钥文件不���在: $PRIVATE_KEY_FILE"
+        return 1
     fi
     
     # 显示警告
@@ -462,7 +451,7 @@ display_private_key() {
     echo ""
     
     # 显示私钥
-    cat "$private_key_file"
+    cat "$PRIVATE_KEY_FILE"
     
     echo ""
     echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"
@@ -470,17 +459,15 @@ display_private_key() {
     
     # 显示密钥信息
     echo -e "${CYAN}【 密钥文件信息 】${NC}"
-    echo "  文件路径: $private_key_file"
-    echo "  文件大小: $(ls -lh $private_key_file | awk '{print $5}')"
-    echo "  文件权限: $(ls -l $private_key_file | awk '{print $1}')"
+    echo "  文件路径: $PRIVATE_KEY_FILE"
+    echo "  文件大小: $(ls -lh $PRIVATE_KEY_FILE | awk '{print $5}')"
+    echo "  文件权限: $(ls -l $PRIVATE_KEY_FILE | awk '{print $1}')"
     echo ""
     
     # 显示公钥指纹
     echo -e "${CYAN}【 公钥指纹 】${NC}"
-    if [[ "$ALGO" == "rsa" ]]; then
-        ssh-keygen -lf "$SSH_DIR/id_rsa.pub" 2>/dev/null | awk '{print "  指纹: " $2 "\n  类型: " $4}'
-    elif [[ "$ALGO" == "ed25519" ]]; then
-        ssh-keygen -lf "$SSH_DIR/id_ed25519.pub" 2>/dev/null | awk '{print "  指纹: " $2 "\n  类型: " $4}'
+    if [[ -f "$PUBLIC_KEY_FILE" ]]; then
+        ssh-keygen -lf "$PUBLIC_KEY_FILE" 2>/dev/null | awk '{print "  指纹: " $2 "\n  类型: " $4}'
     fi
     echo ""
     
@@ -501,7 +488,7 @@ show_security_info() {
     cat << 'EOF'
 ╔════════════════════════════════════════════════════════════════╗
 ║                     🔐 安全提示                                ║
-╚════════════════════════════════════════════════════════════════╝
+╚═══════════════════════════════════════���════════════════════════╝
 
 【立即行动】
   1. 如果显示了私钥，请立即复制并保存到本地安全的位置
@@ -559,7 +546,7 @@ main() {
     cat << 'EOF'
 ╔════════════════════════════════════════════════════════════════╗
 ║                                                                ║
-║           SSH 密钥生成与系统配置工具 v2.1                      ║
+║           SSH 密钥生成与系统配置工具 v2.2                      ║
 ║                                                                ║
 ║  功能流程:                                                      ║
 ║   Step 1: 检查OpenSSH服务和SSH功能                              ║

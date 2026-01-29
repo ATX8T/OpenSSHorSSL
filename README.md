@@ -28,6 +28,12 @@ https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
 ## 4. 在线脚本使用方法相关的
 
 ```
+在线脚本
+bash <(curl -s https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/SSH30/ssh_admin_toolkit.sh)
+
+如果下载要chmod +x赋予权限
+chmod +x ssh_admin_toolkit.sh
+
 启动交互式菜单（推荐）
 ./ssh_admin_toolkit.sh
 
@@ -38,4 +44,29 @@ https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
 ./ssh_admin_toolkit.sh -v          # 验证密钥
 ./ssh_admin_toolkit.sh -t          # 测试连接
 ./ssh_admin_toolkit.sh -h          # 显示帮助
+
 ```
+- 生成后找到密钥文件或者在命令行复制到私钥内容
+-  id_rsa 在Windows创建没有后缀名  直接到C:\Users\用户名\.ssh 复制一份然后修改内容就可
+
+- 用 Windows 自带 SSH 连接服务器
+```
+ssh -i "C:\Users\你的Windows用户名\.ssh\id_rsa" 服务器用户名@服务器IP
+
+示例：
+ C:\IM\SSH与key与服务器证书\测试用
+注意反斜杠
+
+ssh -i "C:\IM\SSH与key与服务器证书\测试用\id_rsa" root@192.168.244.139
+```
+
+
+
+
+## 5. 实现的关键点
+- 私钥（id_rsa）：是保密的核心文件，谁持有这个文件，谁就能认证登录服务器，必须下载到你的 Windows 电脑上，且要妥善保管（不能泄露）。（基于在服务器生成的情况）
+- 公钥（id_rsa.pub）：是公开的文件，它本身不能用来登录，只是存放在服务器的authorized_keys里做认证校验，不需要下载到 Windows。
+- 如果在Windows 本地端生成的，则需要将公钥上传到服务器上，并保或者追加存到 authorized_keys 文件中。
+
+- 总结就是在服务器生成需要下载私钥 如果在本地生成需要上传公钥并且追加到authorized_keys 文件中。
+

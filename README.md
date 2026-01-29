@@ -33,6 +33,8 @@ https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
 在线脚本
 bash <(curl -s https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ssh_admin_toolkit.sh)
 
+bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_toolkit.sh)
+
 生成的密钥 默认会删除旧密钥  如果要多个密钥可以连接在 authorized_keys 中追加之前的公钥即可
 
 如果下载要chmod +x赋予权限

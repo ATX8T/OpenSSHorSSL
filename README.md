@@ -159,7 +159,7 @@ https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png
 
  正确的图床原始链接（删除blob，保留raw+ 分支 + 路径）：https://gitee.com/kaiyuankaifa/img/raw/master/Camera_XHS_17280384655681040g008312dh0m3fm62g5ouh912pt1mj96otrno.jpg
 
- ![图片描述](https://gitee.com/kaiyuankaifa/img/raw/master/Camera_XHS_17280384655681040g008312dh0m3fm62g5ouh912pt1mj96otrno.jpg)
+ <!-- ![图片描述](https://gitee.com/kaiyuankaifa/img/raw/master/Camera_XHS_17280384655681040g008312dh0m3fm62g5ouh912pt1mj96otrno.jpg) -->
 
  ![图片描述](https://gitee.com/kaiyuankaifa/img/raw/master/16bi9img/niuj1.png)
 

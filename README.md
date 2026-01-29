@@ -23,3 +23,17 @@ https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
 - ⚠️ 登录执行前检查当前登录的用户是否有root权限
 - ⚠️ 下载到本地使用 chmod +x 赋予权限
 
+
+
+## 在线脚本使用方法相关的
+
+# 启动交互式菜单（推荐）
+./ssh_admin_toolkit.sh
+
+# 或使用命令行参数
+./ssh_admin_toolkit.sh -i          # 安装SSH
+./ssh_admin_toolkit.sh -g          # 生成密钥
+./ssh_admin_toolkit.sh -c          # 配置服务
+./ssh_admin_toolkit.sh -v          # 验证密钥
+./ssh_admin_toolkit.sh -t          # 测试连接
+./ssh_admin_toolkit.sh -h          # 显示帮助

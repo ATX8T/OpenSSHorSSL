@@ -127,15 +127,36 @@ bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_to
 区别在于没有https://raw.githubusercontent.com/  改为https://gitee.com/
 bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_toolkit.sh)
 
-
 测试结果比github要快
 
 ```
+
+
+
+
 最后配置好gitee与GitHub的密钥然后就可以同步了  直接在vscode中编写使用GitHub Desktop同步到GitHub 再到Gitee同步 即可
 ```
 https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png
+
+用做图床
+![在gitee上同步](https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ResourceInfo/jietu1.png)
+
+<!-- <img src="https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png" width="500" alt="图片描述"/> -->
 ```
-![截图1（可自定义描述）](https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ResourceInfo/jietu1.png)
 
 
-<img src="https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png" width="500" alt="图片描述"/>
+![在gitee上同步](https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ResourceInfo/jietu1.png)
+
+
+
+## 9. 图床测试
+在GitHub中上传图片
+![在GitHub上同步](https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ResourceInfo/jietu1.png)
+在Gitee中上传图片
+![在gitee上同步](https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ResourceInfo/jietu1.png)
+
+ 正确的图床原始链接（删除blob，保留raw+ 分支 + 路径）：https://gitee.com/kaiyuankaifa/img/raw/master/Camera_XHS_17280384655681040g008312dh0m3fm62g5ouh912pt1mj96otrno.jpg
+
+ ![图片描述](https://gitee.com/kaiyuankaifa/img/raw/master/Camera_XHS_17280384655681040g008312dh0m3fm62g5ouh912pt1mj96otrno.jpg)
+
+实际测试 gitee 图床没有成功

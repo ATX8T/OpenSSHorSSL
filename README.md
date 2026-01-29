@@ -38,24 +38,6 @@ chmod +x ssh_admin_toolkit.sh
 ./ssh_admin_toolkit.sh
 
 
-~/.ssh/
-├── id_rsa                    # 当前密钥（私钥）
-├── id_rsa.pub                # 当前密钥（公钥）
-├── authorized_keys           # 仅包含当前公钥
-└── BackupData/
-    └── backup_20260129_195532/
-        ├── id_rsa            # 旧密钥（私钥）
-        ├── id_rsa.pub        # 旧密钥（公钥）
-        └── authorized_keys.bak  # 旧配置
-
-
-首次运行
-生成新密钥 → 添加到 authorized_keys → 配置完成
-
-重新生成密钥
-检测旧密钥 → 备份到 BackupData → 生成新密钥 → 覆盖 authorized_keys
-↓
-显示恢复提示
 
 ```
 - 生成后找到密钥文件或者在命令行复制到私钥内容

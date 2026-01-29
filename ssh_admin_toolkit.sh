@@ -7,12 +7,12 @@
 #  核心功能:                                                                   #
 #  1. 检查OpenSSH服务和SSH功能状态，自动安装并启动                              #
 #  2. 提供密钥算法选择交互（RSA 4096/8192, Ed25519）                           #
-#  3. 生成密钥并自动备份旧密钥到 BackupData 文件夹                              #
+#  3. 重新生成密钥时直接删除旧密钥（不备份）                                    #
 #  4. 配置SSH服务实现密钥远程登录                                              #
 #  5. 密钥生成成功后交互询问是否显示私钥                                        #
-#  6. 旧密钥已备份，仅新密钥有效。可手动恢复旧密钥                              #
+#  6. 安全考虑：直接删除旧密钥                                                  #
 #                                                                              #
-#  版本: v2.4 (简化密钥覆盖逻辑)                                                #
+#  版本: v2.6 (直接删除旧密钥 - 最大安全)                                        #
 #  日期: 2025-04-07                                                            #
 #                                                                              #
 ################################################################################
@@ -29,7 +29,6 @@ NC='\033[0m'
 
 # 全局变量
 SSH_DIR="$HOME/.ssh"
-BACKUP_DIR="$SSH_DIR/BackupData"
 SSH_CONFIG="/etc/ssh/sshd_config"
 DISTRO=""
 ALGO=""
@@ -61,7 +60,7 @@ log_error() {
 print_step() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}● Step: $@${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━��━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
 
 ################################################################################
@@ -193,7 +192,7 @@ select_key_algorithm() {
     cat << 'EOF'
 ┌──────────────┬─────────────┬──────────┬─────────────────────────┐
 │ 选项         │ 算法        │ 密钥大小 │ 特点                    │
-├────���─────────┼─────────────┼──────────┼─────────────────────────┤
+├──────────────┼─────────────┼──────────┼─────────────────────────┤
 │ 1            │ RSA 4096    │ 4096位   │ 兼容性好，应用广泛      │
 │ 2            │ RSA 8192    │ 8192位   │ 超高安全性，生成较慢    │
 │ 3            │ Ed25519     │ 256bit   │ ★推荐★ 快速高效安全    │
@@ -242,19 +241,15 @@ EOF
 }
 
 ################################################################################
-#                          第三步: 生成密钥和备份                               #
+#                          第三步: 生成密钥和删除旧密钥                         #
 ################################################################################
 
 init_ssh_dir() {
     mkdir -p "$SSH_DIR"
     chmod 700 "$SSH_DIR"
-    
-    # 创建BackupData文件夹
-    mkdir -p "$BACKUP_DIR"
-    chmod 700 "$BACKUP_DIR"
 }
 
-backup_existing_keys() {
+remove_old_keys() {
     # 检查是否存在旧密钥
     local has_old_keys=false
     
@@ -264,35 +259,48 @@ backup_existing_keys() {
     
     if [[ "$has_old_keys" == "true" ]]; then
         log_warn "检测到已存在的SSH密钥文件"
-        
-        local timestamp=$(date +%Y%m%d_%H%M%S)
-        local backup_subdir="$BACKUP_DIR/backup_$timestamp"
-        
-        mkdir -p "$backup_subdir"
-        
-        # 备份现有密钥和配置
-        [[ -f "$SSH_DIR/id_rsa" ]] && cp "$SSH_DIR/id_rsa" "$backup_subdir/" 2>/dev/null
-        [[ -f "$SSH_DIR/id_rsa.pub" ]] && cp "$SSH_DIR/id_rsa.pub" "$backup_subdir/" 2>/dev/null
-        [[ -f "$SSH_DIR/id_ed25519" ]] && cp "$SSH_DIR/id_ed25519" "$backup_subdir/" 2>/dev/null
-        [[ -f "$SSH_DIR/id_ed25519.pub" ]] && cp "$SSH_DIR/id_ed25519.pub" "$backup_subdir/" 2>/dev/null
-        [[ -f "$SSH_DIR/authorized_keys" ]] && cp "$SSH_DIR/authorized_keys" "$backup_subdir/authorized_keys.bak" 2>/dev/null
-        
-        log_success "旧密钥已备份到: $backup_subdir"
-        
-        # 显示恢复提示
         echo ""
-        echo -e "${YELLOW}【 恢复旧密钥的步骤 】${NC}"
-        echo "如果需要使用备份的旧密钥连接，请执行以下步骤:"
+        
+        # 显示警告信息
+        echo -e "${RED}╔════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║                      ⚠️  重要安全通知                          ║${NC}"
+        echo -e "${RED}╚════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
-        echo "1. 恢复私钥文件:"
-        echo "   $ cp $backup_subdir/id_rsa ~/.ssh/id_rsa"
+        echo -e "${YELLOW}【 旧密钥删除 】${NC}"
+        echo "  检测到系统中存在旧的SSH密钥文件"
+        echo "  为了确保安全性，旧密钥将被直接删除（不备份）"
         echo ""
-        echo "2. 恢复公钥到 authorized_keys:"
-        echo "   $ cat $backup_subdir/id_rsa.pub >> ~/.ssh/authorized_keys"
+        echo -e "${RED}【 删除文件列表 】${NC}"
+        [[ -f "$SSH_DIR/id_rsa" ]] && echo "  • $SSH_DIR/id_rsa"
+        [[ -f "$SSH_DIR/id_rsa.pub" ]] && echo "  • $SSH_DIR/id_rsa.pub"
+        [[ -f "$SSH_DIR/id_ed25519" ]] && echo "  • $SSH_DIR/id_ed25519"
+        [[ -f "$SSH_DIR/id_ed25519.pub" ]] && echo "  • $SSH_DIR/id_ed25519.pub"
+        [[ -f "$SSH_DIR/authorized_keys" ]] && echo "  • $SSH_DIR/authorized_keys"
         echo ""
-        echo "3. 确保权限正确:"
-        echo "   $ chmod 600 ~/.ssh/id_rsa"
-        echo "   $ chmod 600 ~/.ssh/authorized_keys"
+        echo -e "${RED}══════════════════════════════════════════════════════════════��═${NC}"
+        echo ""
+        
+        # 确认删除
+        while true; do
+            read -p "确认删除旧密钥吗？(y/n): " confirm
+            case $confirm in
+                [Yy])
+                    log_warn "删除旧密钥文件..."
+                    rm -f "$SSH_DIR/id_rsa" "$SSH_DIR/id_rsa.pub" "$SSH_DIR/id_ed25519" "$SSH_DIR/id_ed25519.pub" 2>/dev/null
+                    rm -f "$SSH_DIR/authorized_keys" 2>/dev/null
+                    log_success "旧密钥文件已删除"
+                    break
+                    ;;
+                [Nn])
+                    log_error "用户取消删除操作，脚本退出"
+                    exit 1
+                    ;;
+                *)
+                    log_error "请输入 y 或 n"
+                    ;;
+            esac
+        done
+        
         echo ""
     fi
 }
@@ -301,11 +309,11 @@ generate_keypair() {
     print_step "生成密钥对"
     
     init_ssh_dir
-    backup_existing_keys
+    remove_old_keys
     
     log_info "生成 ${ALGO^^} 密钥对..."
     
-    # 删除旧密钥（如果存在）
+    # 确保文件不存在
     rm -f "$PRIVATE_KEY_FILE" "$PUBLIC_KEY_FILE" 2>/dev/null || true
     
     # 根据算法生成密钥
@@ -339,7 +347,7 @@ ask_display_private_key() {
   私钥: $PRIVATE_KEY_FILE
   公钥: $PUBLIC_KEY_FILE
 
-━━━��━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
     
@@ -406,7 +414,7 @@ configure_ssh_service() {
     # 配置authorized_keys - 清空并添加新公钥
     log_info "配置授权密钥..."
     
-    # 创建新的authorized_keys（覆盖旧内容）
+    # 创建新的authorized_keys（仅包含新公钥）
     if [[ -f "$PUBLIC_KEY_FILE" ]]; then
         cat "$PUBLIC_KEY_FILE" > "$SSH_DIR/authorized_keys"
         log_success "新公钥已设置为唯一授权密钥"
@@ -493,9 +501,10 @@ show_security_info() {
 ╚════════════════════════════════════════════════════════════════╝
 
 【密钥替换说明】
-  ✓ 新生成的密钥已覆盖旧密钥
+  ✓ 新生成的密钥已覆盖系统中的旧密钥
   ✓ 只有新密钥可以用于远程登录
-  ✓ 旧密钥已完整备份，可随时恢复
+  ✓ 旧密钥已被完全删除
+  ✓ 为了安全起见，未保留备份
 
 【立即行动】
   1. 如果显示了私钥，请立即复制并保存到本地安全的位置
@@ -516,41 +525,16 @@ show_security_info() {
 【远程登录】
   使用新生成的密钥远程登录服务器:
   
-  $ ssh -i ~/.ssh/id_rsa root@<服务器IP地址>
-  
-  或者（如果已配置为默认密钥）:
-  
   $ ssh root@<服务器IP地址>
+  
+  或指定密钥文件:
+  
+  $ ssh -i ~/.ssh/id_rsa root@<服务器IP地址>
 
-【备份位置】
-  旧密钥备份位置: $BACKUP_DIR
-  
-  备份文件包含:
-    • id_rsa         - 旧私钥
-    • id_rsa.pub     - 旧公钥
-    • authorized_keys.bak - 旧授权配置备份
-
-【恢复旧密钥的方法】
-  如果需要重新启用旧密钥进行连接，请:
-  
-  1. 恢复旧私钥到当前位置:
-     $ cp ~/.ssh/BackupData/backup_时间戳/id_rsa ~/.ssh/id_rsa
-  
-  2. 添加旧公钥到授权密钥:
-     $ cat ~/.ssh/BackupData/backup_时间戳/id_rsa.pub >> ~/.ssh/authorized_keys
-  
-  3. 确保权限正确:
-     $ chmod 600 ~/.ssh/id_rsa
-     $ chmod 600 ~/.ssh/authorized_keys
-  
-  4. 现在可以同时使用新旧密钥连接:
-     $ ssh -i ~/.ssh/BackupData/backup_时间戳/id_rsa root@<服务器IP>
-
-【查看当前授权密钥】
-  $ cat ~/.ssh/authorized_keys
-
-【查看备份列表】
-  $ ls -la ~/.ssh/BackupData/
+【重要警告】
+  ⚠️  旧密钥已被删除，无法恢复
+  ⚠️  必须安全保存新生成的私钥
+  ⚠️  如果丢失新私钥，将无法远程登录
 
 【再次查看私钥】
   如果需要再次查看私钥，可以执行:
@@ -558,53 +542,22 @@ show_security_info() {
   或
   $ cat ~/.ssh/id_ed25519
 
+【故障排除】
+  如果无法远程登录，请检查:
+  
+  1. 新密钥是否正确保存在本地:
+     $ cat ~/.ssh/id_rsa (本地计算机)
+  
+  2. 服务器的 authorized_keys 是否包含正确的公钥:
+     $ cat ~/.ssh/authorized_keys (服务器)
+  
+  3. SSH服务是否运行:
+     $ sudo systemctl status ssh
+  
+  4. SSH配置文件是否正确:
+     $ sudo sshd -t
+
 ╔════════════════════════════════════════════════════════════════╗
-��               ✓ 所有步骤已完成！                               ║
+║               ✓ 所有步骤已完成！                               ║
 ║                                                                ║
-║  只有新生成的密钥可用。旧密钥已备份，可手动恢复！              ║
-╚════════════════════════════════════════════════════════════════╝
-
-EOF
-}
-
-################################################################################
-#                          主程序                                              #
-################################################################################
-
-main() {
-    clear
-    
-    # 打印欢迎信息
-    echo -e "${BLUE}"
-    cat << 'EOF'
-╔════════════════════════════════════════════════════════════════╗
-║                                                                ║
-║           SSH 密钥生成与系统配置工具 v2.4                      ║
-║                                                                ║
-║  功能流程:                                                      ║
-║   Step 1: 检查OpenSSH服务和SSH功能                              ║
-║   Step 2: 选择密钥算法                                          ║
-║   Step 3: 生成密钥（备份旧密钥）                                ║
-║   Step 4: 询问是否显示私钥                                      ║
-║   Step 5: 配置SSH服务（仅新密钥生效）                           ║
-║   Step 6: 显示私钥内容（如已选择）                              ║
-║                                                                ║
-║  ✓ 旧密钥已备份，可手动恢复！                                  ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
-EOF
-    echo -e "${NC}\n"
-    
-    # 执行各步骤
-    detect_distro
-    check_and_install_ssh
-    select_key_algorithm
-    generate_keypair
-    ask_display_private_key
-    configure_ssh_service
-    display_private_key
-    show_security_info
-}
-
-# 执行主程序
-main "$@"
+║  系统已使用新密钥，

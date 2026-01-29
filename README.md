@@ -29,7 +29,7 @@ https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
 
 ```
 在线脚本
-bash <(curl -s https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/SSH30/ssh_admin_toolkit.sh)
+bash <(curl -s https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ssh_admin_toolkit.sh)
 
 如果下载要chmod +x赋予权限
 chmod +x ssh_admin_toolkit.sh

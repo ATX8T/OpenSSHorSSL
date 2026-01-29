@@ -7,9 +7,12 @@
 3. 请确保脚本所在的 GitHub 仓库是**私有**的，或者脚本本身不包含敏感硬编码信息。
 
 ## 2. 组合在线GitHub脚本
-- 直接在GitHub中编辑ssh_configure.sh中浏览器顶部获取 https://github.com/ATX8T/OpenSSH-OpenSSL/blob/main/ssh_configure.sh
+```
+直接在GitHub中编辑ssh_configure.sh中浏览器顶部获取 https://github.com/ATX8T/OpenSSH-OpenSSL/blob/main/ssh_configure.sh
+
   开始组合
-- 源地址：https://github.com/ATX8T/OpenSSH-OpenSSL/blob/main/ssh_configure.sh
-- 去掉源连接里面的 /blob 与 https://github.com
-- 组合到：https://raw.githubusercontent.com 里面
-- https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
+源地址：https://github.com/ATX8T/OpenSSH-OpenSSL/blob/main/ssh_configure.sh
+去掉源连接里面的 /blob 与 https://github.com
+组合到：https://raw.githubusercontent.com 里面
+https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
+```

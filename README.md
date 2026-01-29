@@ -19,6 +19,6 @@ https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
 
 ## 3. 实现远程登录
 - ⚠️ 需要注意服务器能不能连接到GitHub
-- ⚠️ 登录执行前检查当前登录的用户是否有权限
+- ⚠️ 登录执行前检查当前登录的用户是否有root权限
 - ⚠️ 下载到本地使用 chmod +x 赋予权限
 

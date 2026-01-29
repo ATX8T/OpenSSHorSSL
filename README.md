@@ -127,6 +127,9 @@ bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_to
 区别在于没有https://raw.githubusercontent.com/  改为https://gitee.com/
 bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_toolkit.sh)
 
+
 测试结果比github要快
 
 ```
+最后配置好gitee与GitHub的密钥然后就可以同步了  直接在vscode中编写使用GitHub Desktop同步到GitHub 再到Gitee同步 即可
+![同步](https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png)

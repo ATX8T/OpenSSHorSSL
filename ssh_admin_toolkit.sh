@@ -5,12 +5,13 @@
 #                    SSH Key Generation & System Configuration                 #
 #                                                                              #
 #  核心功能:                                                                   #
-#  1. 检查/安装/启动 SSH 服务                                                   #
-#  2. 生成不同算法的密钥对（RSA/Ed25519/ECDSA/Ed448）                           #
-#  3. 配置系统允许密钥认证 & Root 登录                                          #
-#  4. 显示私钥内容供用户保存                                                    #
+#  1. 检查OpenSSH服务和SSH功能状态，自动安装并启动                              #
+#  2. 提供密钥算法选择交互（RSA 4096/8192, Ed25519）                           #
+#  3. 生成密钥并自动备份旧密钥到 BackupData 文件夹                              #
+#  4. 配置SSH服务实现密钥远程登录                                              #
+#  5. 显示生成的私钥内容                                                        #
 #                                                                              #
-#  版本: v1.0 (精简版)                                                          #
+#  版本: v2.0 (重新设计交互逻辑)                                                #
 #  日期: 2025-04-07                                                            #
 #                                                                              #
 ################################################################################
@@ -27,9 +28,11 @@ NC='\033[0m'
 
 # 全局变量
 SSH_DIR="$HOME/.ssh"
+BACKUP_DIR="$SSH_DIR/BackupData"
 SSH_CONFIG="/etc/ssh/sshd_config"
-SYSTEM_TYPE=""
 DISTRO=""
+ALGO=""
+KEY_BITS=""
 
 ################################################################################
 #                          输出函数                                             #
@@ -51,14 +54,14 @@ log_error() {
     echo -e "${RED}[✗]${NC} $@"
 }
 
-print_header() {
+print_step() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}$@${NC}"
+    echo -e "${BLUE}● Step: $@${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
 
 ################################################################################
-#                          系统检测与初始化                                     #
+#                          第一步: 检查和安装OpenSSH服务                        #
 ################################################################################
 
 detect_distro() {
@@ -68,399 +71,451 @@ detect_distro() {
     elif [[ -f /etc/debian_version ]]; then
         DISTRO="debian"
     elif [[ -f /etc/redhat-release ]]; then
-        DISTRO="redhat"
+        DISTRO="centos"
     else
         log_error "无法识别系统类型"
-        return 1
+        exit 1
     fi
-    return 0
+    
+    log_success "检测到系统: $DISTRO"
 }
 
-check_ssh_service() {
-    print_header "Step 1: SSH 服务检查与安装"
+check_and_install_ssh() {
+    print_step "检查 OpenSSH 服务和 SSH 功能"
     
-    # 检查SSH是否安装
-    if ! command -v ssh >/dev/null 2>&1; then
-        log_warn "SSH未安装，正在安装..."
-        install_ssh_service
+    # 检查SSH命令是否存在
+    if command -v ssh >/dev/null 2>&1; then
+        log_success "SSH 客户端已安装"
     else
-        log_success "SSH客户端已安装"
+        log_warn "SSH 客户端未安装，准备安装..."
+        install_ssh_client
     fi
     
-    # 检查SSHD是否安装
-    if ! sudo systemctl list-units --all 2>/dev/null | grep -q "sshd\|ssh\.service"; then
-        log_warn "SSH服务端未安装，正在安装..."
-        install_ssh_service
+    # 检查SSHD服务是否存在
+    if ! sudo systemctl list-units --all 2>/dev/null | grep -qE "sshd|ssh\.service"; then
+        log_warn "OpenSSH 服务端未安装，准备安装..."
+        install_ssh_server
     else
-        log_success "SSH服务端已安装"
+        log_success "OpenSSH 服务端已安装"
     fi
     
     # 检查SSH服务是否运行
-    if sudo systemctl is-active --quiet ssh || sudo systemctl is-active --quiet sshd; then
-        log_success "SSH服务运行中"
+    if sudo systemctl is-active --quiet ssh 2>/dev/null || sudo systemctl is-active --quiet sshd 2>/dev/null; then
+        log_success "SSH 服务运行中"
     else
-        log_warn "SSH服务未运行，正在启动..."
-        sudo systemctl start ssh 2>/dev/null || sudo systemctl start sshd 2>/dev/null
-        sudo systemctl enable ssh 2>/dev/null || sudo systemctl enable sshd 2>/dev/null
-        log_success "SSH服务已启动"
+        log_warn "SSH 服务未运行，正在启动..."
+        start_ssh_service
     fi
 }
 
-install_ssh_service() {
+install_ssh_client() {
+    log_info "正在安装 SSH 客户端..."
+    
     case "$DISTRO" in
         debian|ubuntu)
-            sudo apt-get update -qq
-            sudo apt-get install -y openssh-client openssh-server >/dev/null 2>&1
+            sudo apt-get update -qq >/dev/null 2>&1
+            sudo apt-get install -y openssh-client >/dev/null 2>&1
             ;;
-        centos|rhel|fedora|rocky)
-            sudo yum install -y openssh-clients openssh-server >/dev/null 2>&1
+        centos|rhel|fedora|rocky|almalinux)
+            sudo yum install -y openssh-clients >/dev/null 2>&1
+            ;;
+        alpine)
+            sudo apk add --no-cache openssh-client >/dev/null 2>&1
+            ;;
+        arch)
+            sudo pacman -S --noconfirm openssh >/dev/null 2>&1
+            ;;
+        *)
+            log_error "不支持的Linux发行版: $DISTRO"
+            exit 1
+            ;;
+    esac
+    
+    log_success "SSH 客户端已安装"
+}
+
+install_ssh_server() {
+    log_info "正在安装 OpenSSH 服务端..."
+    
+    case "$DISTRO" in
+        debian|ubuntu)
+            sudo apt-get update -qq >/dev/null 2>&1
+            sudo apt-get install -y openssh-server >/dev/null 2>&1
+            ;;
+        centos|rhel|fedora|rocky|almalinux)
+            sudo yum install -y openssh-server >/dev/null 2>&1
             ;;
         alpine)
             sudo apk add --no-cache openssh >/dev/null 2>&1
             ;;
+        arch)
+            sudo pacman -S --noconfirm openssh >/dev/null 2>&1
+            ;;
         *)
             log_error "不支持的Linux发行版: $DISTRO"
-            return 1
+            exit 1
             ;;
     esac
-    log_success "SSH已安装"
+    
+    log_success "OpenSSH 服务端已安装"
 }
+
+start_ssh_service() {
+    log_info "启动 SSH 服务..."
+    
+    # 尝试启动sshd
+    sudo systemctl start sshd 2>/dev/null || sudo systemctl start ssh 2>/dev/null
+    
+    # 配置开机自启
+    sudo systemctl enable sshd 2>/dev/null || sudo systemctl enable ssh 2>/dev/null
+    
+    # 验证是否启动成功
+    if sudo systemctl is-active --quiet sshd 2>/dev/null || sudo systemctl is-active --quiet ssh 2>/dev/null; then
+        log_success "SSH 服务已启动并设置开机自启"
+    else
+        log_error "SSH 服务启动失败"
+        exit 1
+    fi
+}
+
+################################################################################
+#                          ��二步: 密钥算法选择交互                             #
+################################################################################
+
+select_key_algorithm() {
+    print_step "选择密钥算法"
+    
+    # 显示算法对比表
+    cat << 'EOF'
+┌──────────────┬─────────────┬──────────┬─────────────────────────┐
+│ 选项         │ 算法        │ 密钥大小 │ 特点                    │
+├──────────────┼─────────────┼──────────┼─────────────────────────┤
+│ 1            │ RSA 4096    │ 4096位   │ 兼容性好，应用广泛      │
+│ 2            │ RSA 8192    │ 8192位   │ 超高安全性，生成较慢    │
+│ 3            │ Ed25519     │ 256bit   │ ★推荐★ 快速高效安全    │
+└──────────────┴─────────────┴──────────┴─────────────────────────┘
+
+算法说明:
+  • RSA 4096: 广泛兼容，适合大多数场景
+  • RSA 8192: 最高安全级别，推荐用于政府/金融等敏感领域
+  • Ed25519:  现代算法，运算速度快，安全性强（★★★推荐★★★）
+
+EOF
+    
+    while true; do
+        read -p "请选择密钥算法 [1-3]: " algo_choice
+        
+        case $algo_choice in
+            1)
+                ALGO="rsa"
+                KEY_BITS="4096"
+                log_success "已选择: RSA 4096位"
+                break
+                ;;
+            2)
+                ALGO="rsa"
+                KEY_BITS="8192"
+                log_success "已选择: RSA 8192位"
+                break
+                ;;
+            3)
+                ALGO="ed25519"
+                KEY_BITS="256"
+                log_success "已选择: Ed25519 (推荐)"
+                break
+                ;;
+            *)
+                log_error "无效选择，请输入 1-3"
+                ;;
+        esac
+    done
+}
+
+################################################################################
+#                          第三步: 生成密钥和备份                               #
+################################################################################
 
 init_ssh_dir() {
     mkdir -p "$SSH_DIR"
     chmod 700 "$SSH_DIR"
+    
+    # 创建BackupData文件夹
+    mkdir -p "$BACKUP_DIR"
+    chmod 700 "$BACKUP_DIR"
 }
 
-################################################################################
-#                          密钥生成                                             #
-################################################################################
-
-show_algorithm_info() {
-    print_header "Step 2: 选择密钥算法"
+backup_existing_keys() {
+    # 检查是否存在旧密钥
+    local has_old_keys=false
     
-    cat << 'EOF'
-密钥算法对比表:
-
-┌────────────────────────────────────────────────────────────────────┐
-│ 算法      │ 密钥大小      │ 安全性  │ 兼容性 │ 性能  │ 推荐度      │
-├────────────────────────────────────────────────────────────────────┤
-│ RSA 4096  │ 4096位       │ ★★★★☆ │ ★★★★★ │ 一般  │ 兼容性最佳  │
-│ RSA 8192  │ 8192位       │ ★★★★★ │ ★★★★☆ │ 较慢  │ 超高安全性  │
-│ Ed25519   │ 256bit       │ ★★★★★ │ ★★★★☆ │ ★★★★★ │ 推荐使用!  │
-│ ECDSA     │ 256bit       │ ★★★★☆ │ ★★★★☆ │ ★★★★  │ 较新系统   │
-│ Ed448     │ 456bit       │ ★★★★★ │ ★★☆☆☆ │ ★★★★  │ 专业用途   │
-└────────────────────────────────────────────────────────────────────┘
-
-兼容性说明:
-  • RSA 4096: 所有系统都支持（最广泛）
-  • RSA 8192: 大多数系统支持（某些旧系统可能不支持）
-  • Ed25519: 现代系统（推荐！速度快、安全性强）
-  • ECDSA: 现代系统支持（但不如Ed25519快）
-  • Ed448: 需要较新的SSH客户端支持
-
-安全级别分析:
-  ★★★★★ 超强 - Ed25519, RSA 8192, Ed448
-  ★★★★☆ 很强 - RSA 4096, ECDSA
-  ★★★☆☆ ���   - RSA 2048 (已过时)
-
-EOF
+    if [[ -f "$SSH_DIR/id_rsa" ]] || [[ -f "$SSH_DIR/id_ed25519" ]] || [[ -f "$SSH_DIR/authorized_keys" ]]; then
+        has_old_keys=true
+    fi
     
-    echo -e "${YELLOW}请选择密钥算法:${NC}"
-    echo "  1) RSA 4096位  (最兼容，推荐用于服务器)"
-    echo "  2) RSA 8192位  (超强安全性，生成较慢)"
-    echo "  3) Ed25519     (推荐！最快最安全)"
-    echo "  4) ECDSA       (现代SSH客户端支持)"
-    echo "  5) Ed448       (企业级安全)"
-    
-    read -p "请输入选项 (1-5): " algo_choice
-    
-    case $algo_choice in
-        1) ALGO="rsa"; KEY_BITS="4096" ;;
-        2) ALGO="rsa"; KEY_BITS="8192" ;;
-        3) ALGO="ed25519"; KEY_BITS="256" ;;
-        4) ALGO="ecdsa"; KEY_BITS="256" ;;
-        5) ALGO="ed448"; KEY_BITS="456" ;;
-        *) 
-            log_error "无效选择"
-            return 1
-            ;;
-    esac
+    if [[ "$has_old_keys" == "true" ]]; then
+        log_warn "检测到已存在的SSH密钥文件"
+        
+        local timestamp=$(date +%Y%m%d_%H%M%S)
+        local backup_subdir="$BACKUP_DIR/backup_$timestamp"
+        
+        mkdir -p "$backup_subdir"
+        
+        # 备份现有密钥和配置
+        [[ -f "$SSH_DIR/id_rsa" ]] && cp "$SSH_DIR/id_rsa" "$backup_subdir/"
+        [[ -f "$SSH_DIR/id_rsa.pub" ]] && cp "$SSH_DIR/id_rsa.pub" "$backup_subdir/"
+        [[ -f "$SSH_DIR/id_ed25519" ]] && cp "$SSH_DIR/id_ed25519" "$backup_subdir/"
+        [[ -f "$SSH_DIR/id_ed25519.pub" ]] && cp "$SSH_DIR/id_ed25519.pub" "$backup_subdir/"
+        [[ -f "$SSH_DIR/authorized_keys" ]] && cp "$SSH_DIR/authorized_keys" "$backup_subdir/"
+        
+        log_success "旧密钥已备份到: $backup_subdir"
+    fi
 }
 
 generate_keypair() {
+    print_step "生成密钥对"
+    
     init_ssh_dir
+    backup_existing_keys
     
-    # 检查是否已存在密钥
-    if [[ -f "$SSH_DIR/id_$ALGO" ]]; then
-        log_warn "密钥已存在: $SSH_DIR/id_$ALGO"
-        read -p "是否覆盖? (y/n): " overwrite
-        if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-            log_info "保留现有密钥，退出"
-            return 1
-        fi
-        backup_old_keys
+    log_info "生成 ${ALGO^^} 密钥对..."
+    
+    # 根据算法生成密钥
+    if [[ "$ALGO" == "rsa" ]]; then
+        ssh-keygen -t rsa -b "$KEY_BITS" -N "" -f "$SSH_DIR/id_rsa" -C "root@$(hostname)" 2>/dev/null
+        chmod 600 "$SSH_DIR/id_rsa"
+        chmod 644 "$SSH_DIR/id_rsa.pub"
+        log_success "RSA ${KEY_BITS}位 密钥对已生成"
+    elif [[ "$ALGO" == "ed25519" ]]; then
+        ssh-keygen -t ed25519 -N "" -f "$SSH_DIR/id_ed25519" -C "root@$(hostname)" 2>/dev/null
+        chmod 600 "$SSH_DIR/id_ed25519"
+        chmod 644 "$SSH_DIR/id_ed25519.pub"
+        log_success "Ed25519 密钥对已生成"
     fi
-    
-    log_info "生成 ${ALGO^^} 密钥对 (${KEY_BITS}位)..."
-    
-    # 根据算法生成不同的密钥
-    case $ALGO in
-        rsa)
-            ssh-keygen -t rsa -b "$KEY_BITS" -N "" -f "$SSH_DIR/id_rsa" -C "root@$(hostname)" 2>/dev/null
-            chmod 600 "$SSH_DIR/id_rsa"
-            chmod 644 "$SSH_DIR/id_rsa.pub"
-            ;;
-        ed25519)
-            ssh-keygen -t ed25519 -N "" -f "$SSH_DIR/id_ed25519" -C "root@$(hostname)" 2>/dev/null
-            chmod 600 "$SSH_DIR/id_ed25519"
-            chmod 644 "$SSH_DIR/id_ed25519.pub"
-            ;;
-        ecdsa)
-            ssh-keygen -t ecdsa -b 256 -N "" -f "$SSH_DIR/id_ecdsa" -C "root@$(hostname)" 2>/dev/null
-            chmod 600 "$SSH_DIR/id_ecdsa"
-            chmod 644 "$SSH_DIR/id_ecdsa.pub"
-            ;;
-        ed448)
-            ssh-keygen -t ed448 -N "" -f "$SSH_DIR/id_ed448" -C "root@$(hostname)" 2>/dev/null
-            chmod 600 "$SSH_DIR/id_ed448"
-            chmod 644 "$SSH_DIR/id_ed448.pub"
-            ;;
-    esac
-    
-    log_success "密钥对生成完成"
-    return 0
-}
-
-backup_old_keys() {
-    local timestamp=$(date +%s)
-    local backup_dir="$SSH_DIR/backup_$timestamp"
-    mkdir -p "$backup_dir"
-    
-    cp "$SSH_DIR/id_$ALGO" "$backup_dir/" 2>/dev/null || true
-    cp "$SSH_DIR/id_${ALGO}.pub" "$backup_dir/" 2>/dev/null || true
-    
-    log_success "旧密钥已备份到: $backup_dir"
 }
 
 ################################################################################
-#                          系统配置                                             #
+#                          第四步: 配置SSH服务                                 #
 ################################################################################
 
-configure_ssh() {
-    print_header "Step 3: SSH 系统配置"
+configure_ssh_service() {
+    print_step "配置SSH服务以支持密钥登录"
     
-    log_info "配置SSH允许密钥认证和Root登录..."
+    log_info "正在修改SSH配置文件..."
     
     # 备份原配置
     if [[ -f "$SSH_CONFIG" ]]; then
-        sudo cp "$SSH_CONFIG" "$SSH_CONFIG.bak.$(date +%s)"
-        log_success "配置文件已备份"
+        sudo cp "$SSH_CONFIG" "$SSH_CONFIG.bak.$(date +%s)" 2>/dev/null
+        log_success "SSH配置文件已备份"
     fi
     
-    # 修改配置项
-    local configs=(
-        "PermitRootLogin yes"
-        "PubkeyAuthentication yes"
-        "PasswordAuthentication no"
-        "PermitEmptyPasswords no"
+    # 配置项数组
+    declare -A config_map=(
+        ["PermitRootLogin"]="yes"
+        ["PubkeyAuthentication"]="yes"
+        ["PasswordAuthentication"]="no"
+        ["PermitEmptyPasswords"]="no"
     )
     
-    for config in "${configs[@]}"; do
-        key="${config%% *}"
-        value="${config#* }"
+    # 应用配置
+    for key in "${!config_map[@]}"; do
+        value="${config_map[$key]}"
         
-        # 取消注释并修改或添加新行
-        if sudo grep -q "^#$key " "$SSH_CONFIG"; then
-            sudo sed -i "s/^#$key .*/$config/" "$SSH_CONFIG"
-        elif ! sudo grep -q "^$key " "$SSH_CONFIG"; then
-            echo "$config" | sudo tee -a "$SSH_CONFIG" >/dev/null
+        # 如果配置被注释，则取消注释
+        if sudo grep -q "^#${key} " "$SSH_CONFIG"; then
+            sudo sed -i "s/^#${key} .*/${key} ${value}/" "$SSH_CONFIG"
+        # 如果配置不存在，则添加
+        elif ! sudo grep -q "^${key} " "$SSH_CONFIG"; then
+            echo "${key} ${value}" | sudo tee -a "$SSH_CONFIG" >/dev/null 2>&1
         fi
         
-        log_success "已配置: $config"
+        log_success "已配置: ${key} ${value}"
     done
     
-    # 重启SSH服务
-    log_info "重启SSH服务..."
-    sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null
+    # 配置authorized_keys
+    log_info "配置授权密钥..."
     
-    if sudo systemctl is-active --quiet ssh 2>/dev/null || sudo systemctl is-active --quiet sshd 2>/dev/null; then
-        log_success "SSH服务已重启"
-    else
-        log_error "SSH服务重启失败"
-        return 1
-    fi
-}
-
-setup_authorized_keys() {
-    print_header "Step 3: 配置授权密钥"
-    
-    local key_file="$SSH_DIR/id_${ALGO}.pub"
-    
-    if [[ ! -f "$key_file" ]]; then
-        log_error "公钥文件不存在: $key_file"
-        return 1
+    if [[ "$ALGO" == "rsa" ]]; then
+        local pub_key_file="$SSH_DIR/id_rsa.pub"
+    elif [[ "$ALGO" == "ed25519" ]]; then
+        local pub_key_file="$SSH_DIR/id_ed25519.pub"
     fi
     
-    local public_key=$(cat "$key_file")
-    
-    # 创建authorized_keys文件
+    # 创建authorized_keys
     if [[ ! -f "$SSH_DIR/authorized_keys" ]]; then
         touch "$SSH_DIR/authorized_keys"
-        chmod 600 "$SSH_DIR/authorized_keys"
-        log_success "创建 authorized_keys 文件"
     fi
     
     # 添加公钥
+    local public_key=$(cat "$pub_key_file")
+    
     if ! grep -F "$public_key" "$SSH_DIR/authorized_keys" >/dev/null 2>&1; then
         echo "$public_key" >> "$SSH_DIR/authorized_keys"
         log_success "公钥已添加到 authorized_keys"
-    else
-        log_warn "公钥已存在于 authorized_keys"
     fi
     
     # 设置权限
     chmod 700 "$SSH_DIR"
     chmod 600 "$SSH_DIR/authorized_keys"
+    chmod 644 "$SSH_DIR/id_*.pub"
     
-    log_success "已配置公钥认证"
+    # 重启SSH服务
+    log_info "重启SSH服务..."
+    sudo systemctl restart sshd 2>/dev/null || sudo systemctl restart ssh 2>/dev/null
+    
+    if sudo systemctl is-active --quiet sshd 2>/dev/null || sudo systemctl is-active --quiet ssh 2>/dev/null; then
+        log_success "SSH服务已重启并应用配置"
+    else
+        log_error "SSH服务重启失败，请手动检查配置"
+        exit 1
+    fi
 }
 
 ################################################################################
-#                          显示私钥                                             #
+#                          第五步: 显示私钥内容                                 #
 ################################################################################
 
 display_private_key() {
-    print_header "Step 4: 私钥内容"
+    print_step "显示私钥内容"
     
-    local key_file="$SSH_DIR/id_${ALGO}"
-    
-    if [[ ! -f "$key_file" ]]; then
-        log_error "私钥文件不存在: $key_file"
-        return 1
+    # 确定私钥文件路径
+    local private_key_file
+    if [[ "$ALGO" == "rsa" ]]; then
+        private_key_file="$SSH_DIR/id_rsa"
+    elif [[ "$ALGO" == "ed25519" ]]; then
+        private_key_file="$SSH_DIR/id_ed25519"
     fi
     
-    log_warn "重要提示: 请妥善保管您的私钥，永远不要分享给任何人！"
+    if [[ ! -f "$private_key_file" ]]; then
+        log_error "私钥文件不存在: $private_key_file"
+        exit 1
+    fi
+    
+    # 显示警告
+    log_warn "以下是您的私钥，请妥善保管！"
     echo ""
     
-    # 显示分隔线和私钥内容
-    echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${RED}                          私钥内容 (${ALGO^^})${NC}"
-    echo -e "${RED}════════════════════════════════════════════════════════════════${NC}\n"
-    
-    cat "$key_file"
-    
-    echo -e "\n${RED}════════════════════════════════════════════════════════════════${NC}"
-    
-    # 显示文件信息
+    # 美化显示
+    echo -e "${RED}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║                                                                ║${NC}"
+    echo -e "${RED}║                    私钥内容 - 请妥善保管                        ║${NC}"
+    echo -e "${RED}║                                                                ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${CYAN}文件信息:${NC}"
-    echo "  路径: $key_file"
-    echo "  大小: $(ls -lh $key_file | awk '{print $5}')"
-    echo "  权限: $(ls -l $key_file | awk '{print $1}')"
+    
+    # 显示私钥
+    cat "$private_key_file"
+    
+    echo ""
+    echo -e "${RED}═════════════════════���══════════════════════════════════════════${NC}"
+    echo ""
+    
+    # 显示密钥信息
+    echo -e "${CYAN}【 密钥文件信息 】${NC}"
+    echo "  文件路径: $private_key_file"
+    echo "  文件大小: $(ls -lh $private_key_file | awk '{print $5}')"
+    echo "  文件权限: $(ls -l $private_key_file | awk '{print $1}')"
+    echo ""
     
     # 显示公钥指纹
-    local pub_file="$SSH_DIR/id_${ALGO}.pub"
-    if [[ -f "$pub_file" ]]; then
-        echo ""
-        echo -e "${CYAN}公钥信息:${NC}"
-        echo "  路径: $pub_file"
-        ssh-keygen -lf "$pub_file" 2>/dev/null | head -1 | awk '{print "  指纹: " $2}'
+    echo -e "${CYAN}【 公钥指纹 】${NC}"
+    if [[ "$ALGO" == "rsa" ]]; then
+        ssh-keygen -lf "$SSH_DIR/id_rsa.pub" 2>/dev/null | awk '{print "  指纹: " $2 "\n  类型: " $4}'
+    elif [[ "$ALGO" == "ed25519" ]]; then
+        ssh-keygen -lf "$SSH_DIR/id_ed25519.pub" 2>/dev/null | awk '{print "  指纹: " $2 "\n  类型: " $4}'
     fi
+    echo ""
+    
+    # 显示授权密钥位置
+    echo -e "${CYAN}【 授权配置 】${NC}"
+    echo "  authorized_keys: $SSH_DIR/authorized_keys"
+    echo "  密钥个数: $(grep -c '^ssh-' "$SSH_DIR/authorized_keys" 2>/dev/null || echo "0")"
+    echo ""
 }
 
 ################################################################################
-#                          安全提示                                             #
+#                          安全提示和总结                                       #
 ################################################################################
 
-show_security_warning() {
-    print_header "安全提示"
+show_security_info() {
+    print_step "重要提示和说明"
     
     cat << 'EOF'
 ╔════════════════════════════════════════════════════════════════╗
-║                      重要安全警告                              ║
+║                     🔐 安全提示                                ║
 ╚════════════════════════════════════════════════════════════════╝
 
-1. 私钥保护
-   ✓ 将上面显示的私钥内容立即保存到安全的地方
-   ✓ 建议使用密码管理器（1Password、Bitwarden等）存储
-   ✓ 永远不要通过不安全的通道传输私钥
-   ✓ 删除此脚本运行后的历史记录: history -c
+【立即行动】
+  1. 复制上面显示的私钥内容
+  2. 保存到本地安全的位置（例如密码管理器）
+  3. 清除服务器上的历史记录: history -c
 
-2. 文件权限
-   ✓ 私钥权限应为 600 (--rw-------)
-   ✓ .ssh 目录权限应为 700 (drwx------)
-   ✓ 定期检查权限: ls -la ~/.ssh
+【密钥保护】
+  ✓ 私钥文件权限: 600 (--rw------)
+  ✓ .ssh 目录权限: 700 (drwx------)
+  ✓ 定期检查: ls -la ~/.ssh
 
-3. Root 远程登录
-   ✓ 已配置允许使用密钥远程Root登录
-   ✓ 密码认证已禁用，只能使用密钥认证
-   ✓ 定期审计 authorized_keys 中的密钥
+【配置说明】
+  ✓ 已启用 PubkeyAuthentication（公钥认证）
+  ✓ 已启用 PermitRootLogin yes（允许Root登录）
+  ✓ 已禁用 PasswordAuthentication（禁止密码认证）
+  ✓ 已禁用 PermitEmptyPasswords（禁止空密码）
 
-4. 备份与恢复
-   ✓ SSH配置文件已自动备份
-   ✓ 旧密钥已备份（如有）
-   ✓ 妥善保管备份文件
+【远程登录】
+  使用密钥远程登录服务器:
+  
+  $ ssh -i ~/.ssh/id_rsa root@<服务器IP地址>
+  
+  或者（如果已配置为默认密钥）:
+  
+  $ ssh root@<服务器IP地址>
 
-5. 日常使用
-   远程登录命令:
-   $ ssh -i ~/.ssh/id_${ALGO} root@<服务器IP>
-   
-   或使用默认密钥（如已配置）:
-   $ ssh root@<服务器IP>
+【备份位置】
+  旧密钥备份位置: $BACKUP_DIR
 
-════════════════════════════════════════════════════════════════
+【查看授权密钥】
+  $ cat ~/.ssh/authorized_keys
+
+╔════════════════════════════════════════════════════════════════╗
+║               ✓ 所有步骤已完成！                               ║
+╚════════════════════════════════════════════════════════════════╝
 
 EOF
-
-    read -p "已阅读安全提示，按 Enter 继续..."
 }
 
 ################################################################################
-#                          主程序流程                                           #
+#                          主程序                                              #
 ################################################################################
 
 main() {
     clear
     
+    # 打印欢迎信息
     echo -e "${BLUE}"
     cat << 'EOF'
-  ╔════════════════════════════════════════════════════════════╗
-  ║                                                            ║
-  ║         SSH 密钥生成与系统配置工具 v1.0                    ║
-  ║                                                            ║
-  ║  功能:                                                      ║
-  ║   1. 检查/安装/启动 SSH 服务                               ║
-  ║   2. 生成多种算法密钥对                                     ║
-  ║   3. 配置系统密钥认证和Root登录                             ║
-  ║   4. 显示私钥内容                                           ║
-  ║                                                            ║
-  ╚════════════════════════════════════════════════════════════╝
+╔════════════════════════��═══════════════════════════════════════╗
+║                                                                ║
+║           SSH 密钥生成与系统配置工具 v2.0                      ║
+║                                                                ║
+║  功能流程:                                                      ║
+║   Step 1: 检查OpenSSH服务和SSH功能                              ║
+║   Step 2: 选择密钥算法                                          ║
+║   Step 3: 生成密钥（自动备份旧密钥）                            ║
+║   Step 4: 配置SSH服务                                           ║
+║   Step 5: 显示私钥内容                                          ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}\n"
     
-    # 步骤 1: 系统检测与SSH安装
-    detect_distro || exit 1
-    check_ssh_service
-    
-    # 步骤 2: 选择密钥算法并生成
-    show_algorithm_info
-    generate_keypair || exit 1
-    
-    # 步骤 3: 系统配置
-    configure_ssh
-    setup_authorized_keys
-    
-    # 步骤 4: 显示私钥
+    # 执行各步骤
+    detect_distro
+    check_and_install_ssh
+    select_key_algorithm
+    generate_keypair
+    configure_ssh_service
     display_private_key
-    
-    # 安全提示
-    show_security_warning
-    
-    print_header "完成"
-    log_success "所有步骤已完成！"
-    echo "密钥已保存到: $SSH_DIR/id_${ALGO}"
-    echo "可以使用以下命令远程登录:"
-    echo "  $ ssh root@<服务器IP>"
+    show_security_info
 }
 
+# 执行主程序
 main "$@"

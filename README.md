@@ -37,13 +37,25 @@ chmod +x ssh_admin_toolkit.sh
 启动交互式菜单（推荐）
 ./ssh_admin_toolkit.sh
 
- 或使用命令行参数
-./ssh_admin_toolkit.sh -i          # 安装SSH
-./ssh_admin_toolkit.sh -g          # 生成密钥
-./ssh_admin_toolkit.sh -c          # 配置服务
-./ssh_admin_toolkit.sh -v          # 验证密钥
-./ssh_admin_toolkit.sh -t          # 测试连接
-./ssh_admin_toolkit.sh -h          # 显示帮助
+
+~/.ssh/
+├── id_rsa                    # 当前密钥（私钥）
+├── id_rsa.pub                # 当前密钥（公钥）
+├── authorized_keys           # 仅包含当前公钥
+└── BackupData/
+    └── backup_20260129_195532/
+        ├── id_rsa            # 旧密钥（私钥）
+        ├── id_rsa.pub        # 旧密钥（公钥）
+        └── authorized_keys.bak  # 旧配置
+
+
+首次运行
+生成新密钥 → 添加到 authorized_keys → 配置完成
+
+重新生成密钥
+检测旧密钥 → 备份到 BackupData → 生成新密钥 → 覆盖 authorized_keys
+↓
+显示恢复提示
 
 ```
 - 生成后找到密钥文件或者在命令行复制到私钥内容

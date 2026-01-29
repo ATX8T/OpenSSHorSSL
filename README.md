@@ -135,6 +135,7 @@ bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_to
 ```
 https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png
 ```
-![同步](https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png)
-![图片描述（可选）](https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png)
+![截图1（可自定义描述）](https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ResourceInfo/jietu1.png)
+
+
 <img src="https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png" width="500" alt="图片描述"/>

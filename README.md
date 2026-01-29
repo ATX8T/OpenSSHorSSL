@@ -159,4 +159,4 @@ https://github.com/ATX8T/OpenSSHorSSL/blob/main/ResourceInfo/jietu1.png
 
  ![图片描述](https://gitee.com/kaiyuankaifa/img/raw/master/Camera_XHS_17280384655681040g008312dh0m3fm62g5ouh912pt1mj96otrno.jpg)
 
-实际测试 gitee 图床没偶尔可以显示
+实际测试 gitee 图床没偶尔可以显示  特别是gitee外链很少成功

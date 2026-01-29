@@ -31,15 +31,29 @@ https://raw.githubusercontent.com/ATX8T/OpenSSH-OpenSSL/main/ssh_configure.sh
 在线脚本
 bash <(curl -s https://raw.githubusercontent.com/ATX8T/OpenSSHorSSL/main/ssh_admin_toolkit.sh)
 
+生成的密钥 默认会删除旧密钥  如果要多个密钥可以连接在 authorized_keys 中追加之前的公钥即可
+
 如果下载要chmod +x赋予权限
 chmod +x ssh_admin_toolkit.sh
 
 启动交互式菜单（推荐）
 ./ssh_admin_toolkit.sh
 
-
-
 ```
+
+## 5. 先测试网络连通性（最基础）
+```
+# 测试能否 ping 通 raw.githubusercontent.com（仅验证连通性，ping 不通不代表无法访问）
+ping -c 3 raw.githubusercontent.com
+
+# 测试 443 端口是否可访问（HTTPS 必备）
+telnet raw.githubusercontent.com 443
+# 或用更通用的 nc 命令（无 telnet 时）
+nc -zv raw.githubusercontent.com 443
+```
+
+
+
 - 生成后找到密钥文件或者在命令行复制到私钥内容
 -  id_rsa 在Windows创建没有后缀名  直接到C:\Users\用户名\.ssh 复制一份然后修改内容就可
 
@@ -57,7 +71,7 @@ ssh -i "C:\IM\SSH与key与服务器证书\测试用\id_rsa" root@192.168.244.139
 
 
 
-## 5. 实现的关键点
+## 6. 实现的关键点
 - 私钥（id_rsa）：是保密的核心文件，谁持有这个文件，谁就能认证登录服务器，必须下载到你的 Windows 电脑上，且要妥善保管（不能泄露）。（基于在服务器生成的情况）
 - 公钥（id_rsa.pub）：是公开的文件，它本身不能用来登录，只是存放在服务器的authorized_keys里做认证校验，不需要下载到 Windows。
 - 如果在Windows 本地端生成的，则需要将公钥上传到服务器上，并保或者追加存到 authorized_keys 文件中。

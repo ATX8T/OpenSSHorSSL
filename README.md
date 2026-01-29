@@ -44,6 +44,8 @@ chmod +x ssh_admin_toolkit.sh
 ```
 
 ## 5. 先测试网络连通性（最基础）
+
+
 ```
 # 测试能否 ping 通 raw.githubusercontent.com（仅验证连通性，ping 不通不代表无法访问）
 ping -c 3 raw.githubusercontent.com
@@ -53,6 +55,7 @@ telnet raw.githubusercontent.com 443
 # 或用更通用的 nc 命令（无 telnet 时）
 nc -zv raw.githubusercontent.com 443
 ```
+### 如果无法访问GitHub 可以使用gitee从GitHub同步过去再改一下地址
 
 
 
@@ -103,3 +106,27 @@ SSH：是网络安全协议，定义了加密远程登录 / 数据传输的规�
 OpenSSH：是SSH 协议的开源实现（最主流），可直接安装使用（如 Linux 自带的 ssh/sshd 命令）；
 OpenSSL：是加密算法库 + 工具集，提供通用的加密 / 解密 / 签名 / 证书功能，是 OpenSSH 的底层依赖之一。
 简单说：SSH 是协议标准 → OpenSSH 是协议的实现 → OpenSSL 是 OpenSSH 用到的加密工具库。
+
+
+
+## 8.  在gitee的在线脚本
+```
+获取在Gitee上的脚本地址，与Github一样都是在浏览器获取到原始地址：
+https://gitee.com/kaiyuankaifa/OpenSSHorSSL/blob/main/ssh_admin_toolkit.sh
+
+删除/blob 改为/raw  就是raw链接访问时，服务器会直接返回文件的原始文本，不包含任何额外的 HTML 标签、样式或元信息。
+https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_toolkit.sh
+
+
+然后把地址添加到脚本中，
+bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_toolkit.sh)
+
+
+
+添加进去，在bash下载并执行这个脚本，
+区别在于没有https://raw.githubusercontent.com/  改为https://gitee.com/
+bash <(curl -s https://gitee.com/kaiyuankaifa/OpenSSHorSSL/raw/main/ssh_admin_toolkit.sh)
+
+测试结果比github要快
+
+```

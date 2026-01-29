@@ -12,7 +12,7 @@
 #  5. 密钥生成成功后交互询问是否显示私钥                                        #
 #  6. 安全考虑：直接删除旧密钥                                                  #
 #                                                                              #
-#  版本: v2.6 (直接删除旧密钥 - 最大安全)                                        #
+#  版本: v2.7 (修复 here-document 语法错误)                                     #
 #  日期: 2025-04-07                                                            #
 #                                                                              #
 ################################################################################
@@ -86,7 +86,6 @@ detect_distro() {
 check_and_install_ssh() {
     print_step "检查 OpenSSH 服务和 SSH 功能"
     
-    # 检查SSH命令是否存在
     if command -v ssh >/dev/null 2>&1; then
         log_success "SSH 客户端已安装"
     else
@@ -94,7 +93,6 @@ check_and_install_ssh() {
         install_ssh_client
     fi
     
-    # 检查SSHD服务是否存在
     if ! sudo systemctl list-units --all 2>/dev/null | grep -qE "sshd|ssh\.service"; then
         log_warn "OpenSSH 服务端未安装，准备安装..."
         install_ssh_server
@@ -102,7 +100,6 @@ check_and_install_ssh() {
         log_success "OpenSSH 服务端已安装"
     fi
     
-    # 检查SSH服务是否运行
     if sudo systemctl is-active --quiet ssh 2>/dev/null || sudo systemctl is-active --quiet sshd 2>/dev/null; then
         log_success "SSH 服务运行中"
     else
@@ -166,15 +163,11 @@ install_ssh_server() {
 start_ssh_service() {
     log_info "启动 SSH 服务..."
     
-    # 尝试启动sshd
     sudo systemctl start sshd 2>/dev/null || sudo systemctl start ssh 2>/dev/null
-    
-    # 配置开机自启
     sudo systemctl enable sshd 2>/dev/null || sudo systemctl enable ssh 2>/dev/null
     
-    # 验证是否启动成功
     if sudo systemctl is-active --quiet sshd 2>/dev/null || sudo systemctl is-active --quiet ssh 2>/dev/null; then
-        log_success "SSH 服务已启动并设置开机自启"
+        log_success "SSH 服务已��动并设置开机自启"
     else
         log_error "SSH 服务启动失败"
         exit 1
@@ -188,21 +181,19 @@ start_ssh_service() {
 select_key_algorithm() {
     print_step "选择密钥算法"
     
-    cat << 'ALGO_EOF'
-┌──────────────┬─────────────┬──────────┬─────────────────────────┐
-│ 选项         │ 算法        │ 密钥大小 │ 特点                    │
-├──────────────┼─────────────┼──────────┼─────────────────────────┤
-│ 1            │ RSA 4096    │ 4096位   │ 兼容性好，应用广泛      │
-│ 2            │ RSA 8192    │ 8192位   │ 超高安全性，生成较慢    │
-│ 3            │ Ed25519     │ 256bit   │ ★推荐★ 快速高效安全    │
-└──────────────┴─────────────┴──────────┴─────────────────────────┘
-
-算法说明:
-  • RSA 4096: 广泛兼容，适合大多数场景
-  • RSA 8192: 最高安全级别，推荐用于政府/金融等敏感领域
-  • Ed25519:  现代算法，运算速度快，安全性强（★★★推荐★★★）
-
-ALGO_EOF
+    echo "┌──────────────┬─────────────┬──────────┬─────────────────────────┐"
+    echo "│ 选项         │ 算法        │ 密钥大小 │ 特点                    │"
+    echo "├──────────────┼─────────────┼──────────┼─────────────────────────┤"
+    echo "│ 1            │ RSA 4096    │ 4096位   │ 兼容性好，应用广泛      │"
+    echo "│ 2            │ RSA 8192    │ 8192位   │ 超高安全性，生成较慢    │"
+    echo "│ 3            │ Ed25519     │ 256bit   │ ★推荐★ 快速高效安全    │"
+    echo "└──────────────┴─────────────┴──────────┴─────────────────────────┘"
+    echo ""
+    echo "算法说明:"
+    echo "  • RSA 4096: 广泛兼容，适合大多数场景"
+    echo "  • RSA 8192: 最高安全级别，推荐用于政府/金融等敏感领域"
+    echo "  • Ed25519:  现代算法，运算速度快，安全性强（★★★推荐★★★）"
+    echo ""
     
     while true; do
         read -p "请选择密钥算法 [1-3]: " algo_choice
@@ -249,7 +240,6 @@ init_ssh_dir() {
 }
 
 remove_old_keys() {
-    # 检查是否存在旧密钥
     local has_old_keys=false
     
     if [[ -f "$SSH_DIR/id_rsa" ]] || [[ -f "$SSH_DIR/id_ed25519" ]] || [[ -f "$SSH_DIR/authorized_keys" ]]; then
@@ -260,7 +250,6 @@ remove_old_keys() {
         log_warn "检测到已存在的SSH密钥文件"
         echo ""
         
-        # 显示警告信息
         echo -e "${RED}╔════════════════════════════════════════════════════════════════╗${NC}"
         echo -e "${RED}║                      ⚠️  重要安全通知                          ║${NC}"
         echo -e "${RED}╚════════════════════════════════════════════════════════════════╝${NC}"
@@ -279,7 +268,6 @@ remove_old_keys() {
         echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"
         echo ""
         
-        # 确认删除
         while true; do
             read -p "确认删除旧密钥吗？(y/n): " confirm
             case $confirm in
@@ -312,10 +300,8 @@ generate_keypair() {
     
     log_info "生成 ${ALGO^^} 密钥对..."
     
-    # 确保文件不存在
     rm -f "$PRIVATE_KEY_FILE" "$PUBLIC_KEY_FILE" 2>/dev/null || true
     
-    # 根据算法生成密钥
     if [[ "$ALGO" == "rsa" ]]; then
         ssh-keygen -t rsa -b "$KEY_BITS" -N "" -f "$PRIVATE_KEY_FILE" -C "root@$(hostname)" 2>&1
         chmod 600 "$PRIVATE_KEY_FILE"
@@ -336,25 +322,18 @@ generate_keypair() {
 ask_display_private_key() {
     print_step "密钥生成成功！是否显示私钥"
     
-    cat << 'DISPLAY_EOF'
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  密钥对已成功生成！
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-密钥存储位置:
-
-DISPLAY_EOF
-    
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  密钥对已成功生成！"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "密钥存储位置:"
+    echo ""
     echo "  私钥: $PRIVATE_KEY_FILE"
     echo "  公钥: $PUBLIC_KEY_FILE"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
     
-    cat << 'DISPLAY_EOF2'
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-DISPLAY_EOF2
-    
-    # 交互询问
     while true; do
         read -p "是否要显示私钥到命令行窗口？(y/n): " user_choice
         
@@ -385,13 +364,11 @@ configure_ssh_service() {
     
     log_info "正在修改SSH配置文件..."
     
-    # 备份原配置
     if [[ -f "$SSH_CONFIG" ]]; then
         sudo cp "$SSH_CONFIG" "$SSH_CONFIG.bak.$(date +%s)" 2>/dev/null
         log_success "SSH配置文件已备份"
     fi
     
-    # 配置项数组
     declare -A config_map=(
         ["PermitRootLogin"]="yes"
         ["PubkeyAuthentication"]="yes"
@@ -399,14 +376,11 @@ configure_ssh_service() {
         ["PermitEmptyPasswords"]="no"
     )
     
-    # 应用配置
     for key in "${!config_map[@]}"; do
         value="${config_map[$key]}"
         
-        # 如果配置被注释，则取消注释
         if sudo grep -q "^#${key} " "$SSH_CONFIG"; then
             sudo sed -i "s/^#${key} .*/${key} ${value}/" "$SSH_CONFIG"
-        # 如果配置不存在，则添加
         elif ! sudo grep -q "^${key} " "$SSH_CONFIG"; then
             echo "${key} ${value}" | sudo tee -a "$SSH_CONFIG" >/dev/null 2>&1
         fi
@@ -414,20 +388,16 @@ configure_ssh_service() {
         log_success "已配置: ${key} ${value}"
     done
     
-    # 配置authorized_keys - 清空并添加新公钥
     log_info "配置授权密钥..."
     
-    # 创建新的authorized_keys（仅包含新公钥）
     if [[ -f "$PUBLIC_KEY_FILE" ]]; then
         cat "$PUBLIC_KEY_FILE" > "$SSH_DIR/authorized_keys"
         log_success "新公钥已设置为唯一授权密钥"
     fi
     
-    # 设置权限
     chmod 700 "$SSH_DIR"
     chmod 600 "$SSH_DIR/authorized_keys"
     
-    # 重启SSH服务
     log_info "重启SSH服务..."
     sudo systemctl restart sshd 2>/dev/null || sudo systemctl restart ssh 2>/dev/null
     
@@ -444,24 +414,20 @@ configure_ssh_service() {
 ################################################################################
 
 display_private_key() {
-    # 如果用户选择不显示，则跳过此步骤
     if [[ "$SHOW_PRIVATE_KEY" != "true" ]]; then
         return 0
     fi
     
     print_step "显示私钥内容"
     
-    # 验证私钥文件存在
     if [[ ! -f "$PRIVATE_KEY_FILE" ]]; then
         log_error "私钥文件不存在: $PRIVATE_KEY_FILE"
         return 1
     fi
     
-    # 显示警告
     log_warn "以下是您的私钥，请妥善保管！"
     echo ""
     
-    # 美化显示
     echo -e "${RED}╔════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${RED}║                                                                ║${NC}"
     echo -e "${RED}║                    私钥内容 - 请妥善保管                        ║${NC}"
@@ -469,21 +435,18 @@ display_private_key() {
     echo -e "${RED}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
-    # 显示私钥
     cat "$PRIVATE_KEY_FILE"
     
     echo ""
     echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"
     echo ""
     
-    # 显示密钥信息
     echo -e "${CYAN}【 密钥文件信息 】${NC}"
     echo "  文件路径: $PRIVATE_KEY_FILE"
     echo "  文件大小: $(ls -lh $PRIVATE_KEY_FILE | awk '{print $5}')"
     echo "  文件权限: $(ls -l $PRIVATE_KEY_FILE | awk '{print $1}')"
     echo ""
     
-    # 显示公钥指纹
     echo -e "${CYAN}【 公钥指纹 】${NC}"
     if [[ -f "$PUBLIC_KEY_FILE" ]]; then
         ssh-keygen -lf "$PUBLIC_KEY_FILE" 2>/dev/null | awk '{print "  指纹: " $2 "\n  类型: " $4}'
@@ -498,76 +461,74 @@ display_private_key() {
 show_security_info() {
     print_step "重要提示和说明"
     
-    cat << 'SECURITY_EOF'
-╔════════════════════════════════════════════════════════════════╗
-║                     🔐 安全提示                                ║
-╚════════════════════════════════════════════════════════════════╝
-
-【密钥替换说明】
-  ✓ 新生成的密钥已覆盖系统中的旧密钥
-  ✓ 只有新密钥可以用于远程登录
-  ✓ 旧密钥已被完全删除
-  ✓ 为了安全起见，未保留备份
-
-【立即行动】
-  1. 如果显示了私钥，请立即复制并保存到本地安全的位置
-  2. 建议保存到密码管理器（例如 1Password、Bitwarden 等）
-  3. 清除服务器上的历史记录: history -c
-
-【密钥保护】
-  ✓ 私钥文件权限: 600 (--rw------)
-  ✓ .ssh 目录权限: 700 (drwx------)
-  ✓ 定期检查: ls -la ~/.ssh
-
-【配置说明】
-  ✓ 已启用 PubkeyAuthentication（公钥认证）
-  ✓ 已启用 PermitRootLogin yes（允许Root登录）
-  ✓ 已禁用 PasswordAuthentication（禁止密码认证）
-  ✓ 已禁用 PermitEmptyPasswords（禁止空密码）
-
-【远程登录】
-  使用新生成的密钥远程登录服务器:
-  
-  $ ssh root@<服务器IP地址>
-  
-  或指定密钥文件:
-  
-  $ ssh -i ~/.ssh/id_rsa root@<服务器IP地址>
-
-【重要警告】
-  ⚠️  旧密钥已被删除，无法恢复
-  ⚠️  必须安全保存新生成的私钥
-  ⚠️  如果丢失新私钥，将无法远程登录
-
-【再次查看私钥】
-  如果需要再次查看私钥，可以执行:
-  $ cat ~/.ssh/id_rsa
-  或
-  $ cat ~/.ssh/id_ed25519
-
-【故障排除】
-  如果无法远程登录，请检查:
-  
-  1. 新密钥是否正确保存在本地:
-     $ cat ~/.ssh/id_rsa (本地计算机)
-  
-  2. 服务器的 authorized_keys 是否包含正确的公钥:
-     $ cat ~/.ssh/authorized_keys (服务器)
-  
-  3. SSH服务是否运行:
-     $ sudo systemctl status ssh
-  
-  4. SSH配置文件是否正确:
-     $ sudo sshd -t
-
-╔════════════════════════════════════════════════════════════════╗
-║               ✓ 所有步骤已完成！                               ║
-║                                                                ║
-║  系统已使用新密钥，旧密钥已删除！                              ║
-║  请妥善保管新私钥！                                            ║
-╚════════════════════════════════════════════════════════════════╝
-
-SECURITY_EOF
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                     🔐 安全提示                                ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "【密钥替换说明】"
+    echo "  ✓ 新生成的密钥已覆盖系统中的旧密钥"
+    echo "  ✓ 只有新密钥可以用于远程登录"
+    echo "  ✓ 旧密钥已��完全删除"
+    echo "  ✓ 为了安全起见，未保留备份"
+    echo ""
+    echo "【立即行动】"
+    echo "  1. 如果显示了私钥，请立即复制并保存到本地安全的位置"
+    echo "  2. 建议保存到密码管理器（例如 1Password、Bitwarden 等）"
+    echo "  3. 清除服务器上的历史记录: history -c"
+    echo ""
+    echo "【密钥保护】"
+    echo "  ✓ 私钥文件权限: 600 (--rw--------)"
+    echo "  ✓ .ssh 目录权限: 700 (drwx------)"
+    echo "  ✓ 定期检查: ls -la ~/.ssh"
+    echo ""
+    echo "【配置说明】"
+    echo "  ✓ 已启用 PubkeyAuthentication（公钥认证）"
+    echo "  ✓ 已启用 PermitRootLogin yes（允许Root登录）"
+    echo "  ✓ 已禁用 PasswordAuthentication（禁止密码认证）"
+    echo "  ✓ 已禁用 PermitEmptyPasswords（禁止空密码）"
+    echo ""
+    echo "【远程登录】"
+    echo "  使用新生成的密钥远程登录服务器:"
+    echo ""
+    echo "  $ ssh root@<服务器IP地址>"
+    echo ""
+    echo "  或指定密钥文件:"
+    echo ""
+    echo "  $ ssh -i ~/.ssh/id_rsa root@<服务器IP地址>"
+    echo ""
+    echo "【重要警告】"
+    echo "  ⚠️  旧密钥已被删除，无法恢复"
+    echo "  ⚠️  必须安全保存新生成的私钥"
+    echo "  ⚠️  如果丢失新私钥，将无法远程登录"
+    echo ""
+    echo "【再次查看私钥】"
+    echo "  如果需要再次查看私钥，可以执行:"
+    echo "  $ cat ~/.ssh/id_rsa"
+    echo "  或"
+    echo "  $ cat ~/.ssh/id_ed25519"
+    echo ""
+    echo "【故障排除】"
+    echo "  如果无法远程登录，请检查:"
+    echo ""
+    echo "  1. 新密钥是否正确保存在本地:"
+    echo "     $ cat ~/.ssh/id_rsa (本地计算机)"
+    echo ""
+    echo "  2. 服务器的 authorized_keys 是否包含正确的公钥:"
+    echo "     $ cat ~/.ssh/authorized_keys (服务器)"
+    echo ""
+    echo "  3. SSH服务是否运行:"
+    echo "     $ sudo systemctl status ssh"
+    echo ""
+    echo "  4. SSH配置文件是否正确:"
+    echo "     $ sudo sshd -t"
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║               ✓ 所有步骤已完成！                               ║"
+    echo "║                                                                ║"
+    echo "║  系统已使用新密钥，旧密钥已删除！                              ║"
+    echo "║  请妥善保管新私钥！                                            ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
 }
 
 ################################################################################
@@ -577,29 +538,25 @@ SECURITY_EOF
 main() {
     clear
     
-    # 打印欢迎信息
     echo -e "${BLUE}"
-    cat << 'WELCOME_EOF'
-╔════════════════════════════════════════════════════════════════╗
-║                                                                ║
-║           SSH 密钥生成与系统配置工具 v2.6                      ║
-║                                                                ║
-║  功能流程:                                                      ║
-║   Step 1: 检查OpenSSH服务和SSH功能                              ║
-║   Step 2: 选择密钥算法                                          ║
-║   Step 3: 检测并删除旧密钥（不备份）                            ║
-║   Step 4: 生成新密钥                                            ║
-║   Step 5: 询问是否显示私钥                                      ║
-║   Step 6: 配置SSH服务                                           ║
-║   Step 7: 显示私钥内容（如已选择）                              ║
-║                                                                ║
-║  ✓ 最大安全：旧密钥已删除，不保留任何备份！                     ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
-WELCOME_EOF
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                                                                ║"
+    echo "║           SSH 密钥生成与系统配置工具 v2.7                      ║"
+    echo "║                                                                ║"
+    echo "║  功能流程:                                                      ║"
+    echo "║   Step 1: 检查OpenSSH服务和SSH功能                              ║"
+    echo "║   Step 2: 选择密钥算法                                          ║"
+    echo "║   Step 3: 检测并删除旧密钥（不备份）                            ║"
+    echo "║   Step 4: 生成新密钥                                            ║"
+    echo "║   Step 5: 询问是否显示私钥                                      ║"
+    echo "║   Step 6: 配置SSH服务                                           ║"
+    echo "║   Step 7: 显示私钥内容（如已选择）                              ║"
+    echo "║                                                                ║"
+    echo "║  ✓ 最大安全：旧密钥已删除，不保留任何备份！                     ║"
+    echo "║                                                                ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}\n"
     
-    # 执行各步骤
     detect_distro
     check_and_install_ssh
     select_key_algorithm
@@ -610,5 +567,4 @@ WELCOME_EOF
     show_security_info
 }
 
-# 执行主程序
 main "$@"

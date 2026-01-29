@@ -10,8 +10,9 @@
 #  3. 生成密钥并自动备份旧密钥到 BackupData 文件夹                              #
 #  4. 配置SSH服务实现密钥远程登录                                              #
 #  5. 密钥生成成功后交互询问是否显示私钥                                        #
+#  6. 旧密钥已备份，仅新密钥有效。可手动恢复旧密钥                              #
 #                                                                              #
-#  版本: v2.2 (修复私钥显示问题)                                                #
+#  版本: v2.4 (简化密钥覆盖逻辑)                                                #
 #  日期: 2025-04-07                                                            #
 #                                                                              #
 ################################################################################
@@ -192,7 +193,7 @@ select_key_algorithm() {
     cat << 'EOF'
 ┌──────────────┬─────────────┬──────────┬─────────────────────────┐
 │ 选项         │ 算法        │ 密钥大小 │ 特点                    │
-├──────────────┼─────────────┼──────────┼─────────────────────────┤
+├────���─────────┼─────────────┼──────────┼─────────────────────────┤
 │ 1            │ RSA 4096    │ 4096位   │ 兼容性好，应用广泛      │
 │ 2            │ RSA 8192    │ 8192位   │ 超高安全性，生成较慢    │
 │ 3            │ Ed25519     │ 256bit   │ ★推荐★ 快速高效安全    │
@@ -274,9 +275,25 @@ backup_existing_keys() {
         [[ -f "$SSH_DIR/id_rsa.pub" ]] && cp "$SSH_DIR/id_rsa.pub" "$backup_subdir/" 2>/dev/null
         [[ -f "$SSH_DIR/id_ed25519" ]] && cp "$SSH_DIR/id_ed25519" "$backup_subdir/" 2>/dev/null
         [[ -f "$SSH_DIR/id_ed25519.pub" ]] && cp "$SSH_DIR/id_ed25519.pub" "$backup_subdir/" 2>/dev/null
-        [[ -f "$SSH_DIR/authorized_keys" ]] && cp "$SSH_DIR/authorized_keys" "$backup_subdir/" 2>/dev/null
+        [[ -f "$SSH_DIR/authorized_keys" ]] && cp "$SSH_DIR/authorized_keys" "$backup_subdir/authorized_keys.bak" 2>/dev/null
         
         log_success "旧密钥已备份到: $backup_subdir"
+        
+        # 显示恢复提示
+        echo ""
+        echo -e "${YELLOW}【 恢复旧密钥的步骤 】${NC}"
+        echo "如果需要使用备份的旧密钥连接，请执行以下步骤:"
+        echo ""
+        echo "1. 恢复私钥文件:"
+        echo "   $ cp $backup_subdir/id_rsa ~/.ssh/id_rsa"
+        echo ""
+        echo "2. 恢复公钥到 authorized_keys:"
+        echo "   $ cat $backup_subdir/id_rsa.pub >> ~/.ssh/authorized_keys"
+        echo ""
+        echo "3. 确保权限正确:"
+        echo "   $ chmod 600 ~/.ssh/id_rsa"
+        echo "   $ chmod 600 ~/.ssh/authorized_keys"
+        echo ""
     fi
 }
 
@@ -322,7 +339,7 @@ ask_display_private_key() {
   私钥: $PRIVATE_KEY_FILE
   公钥: $PUBLIC_KEY_FILE
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━��━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
     
@@ -386,22 +403,13 @@ configure_ssh_service() {
         log_success "已配置: ${key} ${value}"
     done
     
-    # 配置authorized_keys
+    # 配置authorized_keys - 清空并添加新公钥
     log_info "配置授权密钥..."
     
-    # 创建authorized_keys
-    if [[ ! -f "$SSH_DIR/authorized_keys" ]]; then
-        touch "$SSH_DIR/authorized_keys"
-    fi
-    
-    # 添加公钥
+    # 创建新的authorized_keys（覆盖旧内容）
     if [[ -f "$PUBLIC_KEY_FILE" ]]; then
-        local public_key=$(cat "$PUBLIC_KEY_FILE")
-        
-        if ! grep -F "$public_key" "$SSH_DIR/authorized_keys" >/dev/null 2>&1; then
-            echo "$public_key" >> "$SSH_DIR/authorized_keys"
-            log_success "公钥已添加到 authorized_keys"
-        fi
+        cat "$PUBLIC_KEY_FILE" > "$SSH_DIR/authorized_keys"
+        log_success "新公钥已设置为唯一授权密钥"
     fi
     
     # 设置权限
@@ -434,7 +442,7 @@ display_private_key() {
     
     # 验证私钥文件存在
     if [[ ! -f "$PRIVATE_KEY_FILE" ]]; then
-        log_error "私钥文件不���在: $PRIVATE_KEY_FILE"
+        log_error "私钥文件不存在: $PRIVATE_KEY_FILE"
         return 1
     fi
     
@@ -470,12 +478,6 @@ display_private_key() {
         ssh-keygen -lf "$PUBLIC_KEY_FILE" 2>/dev/null | awk '{print "  指纹: " $2 "\n  类型: " $4}'
     fi
     echo ""
-    
-    # 显示授权密钥位置
-    echo -e "${CYAN}【 授权配置 】${NC}"
-    echo "  authorized_keys: $SSH_DIR/authorized_keys"
-    echo "  密钥个数: $(grep -c '^ssh-' "$SSH_DIR/authorized_keys" 2>/dev/null || echo "0")"
-    echo ""
 }
 
 ################################################################################
@@ -488,7 +490,12 @@ show_security_info() {
     cat << 'EOF'
 ╔════════════════════════════════════════════════════════════════╗
 ║                     🔐 安全提示                                ║
-╚═══════════════════════════════════════���════════════════════════╝
+╚════════════════════════════════════════════════════════════════╝
+
+【密钥替换说明】
+  ✓ 新生成的密钥已覆盖旧密钥
+  ✓ 只有新密钥可以用于远程登录
+  ✓ 旧密钥已完整备份，可随时恢复
 
 【立即行动】
   1. 如果显示了私钥，请立即复制并保存到本地安全的位置
@@ -507,7 +514,7 @@ show_security_info() {
   ✓ 已禁用 PermitEmptyPasswords（禁止空密码）
 
 【远程登录】
-  使用密钥远程登录服务器:
+  使用新生成的密钥远程登录服务器:
   
   $ ssh -i ~/.ssh/id_rsa root@<服务器IP地址>
   
@@ -517,9 +524,33 @@ show_security_info() {
 
 【备份位置】
   旧密钥备份位置: $BACKUP_DIR
+  
+  备份文件包含:
+    • id_rsa         - 旧私钥
+    • id_rsa.pub     - 旧公钥
+    • authorized_keys.bak - 旧授权配置备份
 
-【查看授权密钥】
+【恢复旧密钥的方法】
+  如果需要重新启用旧密钥进行连接，请:
+  
+  1. 恢复旧私钥到当前位置:
+     $ cp ~/.ssh/BackupData/backup_时间戳/id_rsa ~/.ssh/id_rsa
+  
+  2. 添加旧公钥到授权密钥:
+     $ cat ~/.ssh/BackupData/backup_时间戳/id_rsa.pub >> ~/.ssh/authorized_keys
+  
+  3. 确保权限正确:
+     $ chmod 600 ~/.ssh/id_rsa
+     $ chmod 600 ~/.ssh/authorized_keys
+  
+  4. 现在可以同时使用新旧密钥连接:
+     $ ssh -i ~/.ssh/BackupData/backup_时间戳/id_rsa root@<服务器IP>
+
+【查看当前授权密钥】
   $ cat ~/.ssh/authorized_keys
+
+【查看备份列表】
+  $ ls -la ~/.ssh/BackupData/
 
 【再次查看私钥】
   如果需要再次查看私钥，可以执行:
@@ -528,7 +559,9 @@ show_security_info() {
   $ cat ~/.ssh/id_ed25519
 
 ╔════════════════════════════════════════════════════════════════╗
-║               ✓ 所有步骤已完成！                               ║
+��               ✓ 所有步骤已完成！                               ║
+║                                                                ║
+║  只有新生成的密钥可用。旧密钥已备份，可手动恢复！              ║
 ╚════════════════════════════════════════════════════════════════╝
 
 EOF
@@ -546,15 +579,17 @@ main() {
     cat << 'EOF'
 ╔════════════════════════════════════════════════════════════════╗
 ║                                                                ║
-║           SSH 密钥生成与系统配置工具 v2.2                      ║
+║           SSH 密钥生成与系统配置工具 v2.4                      ║
 ║                                                                ║
 ║  功能流程:                                                      ║
 ║   Step 1: 检查OpenSSH服务和SSH功能                              ║
 ║   Step 2: 选择密钥算法                                          ║
-║   Step 3: 生成密钥（自动备份旧密钥）                            ║
+║   Step 3: 生成密钥（备份旧密钥）                                ║
 ║   Step 4: 询问是否显示私钥                                      ║
-║   Step 5: 配置SSH服务                                           ║
+║   Step 5: 配置SSH服务（仅新密钥生效）                           ║
 ║   Step 6: 显示私钥内容（如已选择）                              ║
+║                                                                ║
+║  ✓ 旧密钥已备份，可手动恢复！                                  ║
 ║                                                                ║
 ╚════════════════════════════════════════════════════════════════╝
 EOF
